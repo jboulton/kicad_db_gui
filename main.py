@@ -5,9 +5,6 @@ import logging
 import logging.config
 import logging.handlers
 import pathlib
-import signal
-import time
-from uuid import UUID
 
 import psycopg2
 
@@ -123,7 +120,7 @@ def _make_db_connection(**kwargs):
 
 def main():
     """The main Shebang!"""
-    global DB_CONNECTION
+    global DB_CONNECTION  # type: ignore
     args = _parse_commandline_arguments()
     config = _parse_config()
     log_level = args.verbose
