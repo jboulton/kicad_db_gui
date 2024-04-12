@@ -7,6 +7,7 @@ import logging.handlers
 import pathlib
 
 import psycopg2
+import gui
 
 logger = logging.getLogger("DashN2kMonitor")
 
@@ -14,7 +15,6 @@ logger = logging.getLogger("DashN2kMonitor")
 CONFIG_FILENAME = "db_manager.ini"
 SHUTDOWN = False
 CONFIG_FILE_PARSER = None
-DB_CONNECTION = None
 
 
 def _signal_cntrl_c(os_signal, os_frame):
@@ -120,7 +120,6 @@ def _make_db_connection(**kwargs):
 
 def main():
     """The main Shebang!"""
-    global DB_CONNECTION  # type: ignore
     args = _parse_commandline_arguments()
     config = _parse_config()
     log_level = args.verbose
@@ -130,8 +129,8 @@ def main():
     _setup_logging()
 
     logger.info("Starting up")
-    DB_CONNECTION = _make_db_connection(**config['DATABASE'])
-
+    db_connection = _make_db_connection(**config['DATABASE'])
+    main_gui = gui.mainGUI(db_connection)
 
 if __name__ == "__main__":
     main()
