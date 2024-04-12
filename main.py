@@ -132,5 +132,6 @@ def main():
     db_connection = _make_db_connection(**config['DATABASE'])
     main_gui = gui.mainGUI(db_connection)
 
+
 if __name__ == "__main__":
     main()
