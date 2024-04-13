@@ -7,13 +7,15 @@ from ttkbootstrap import Style
 class mainGUI():
 
     def _open_add_part_window(self):
-        self.add_part_window = ttk.Toplevel("KiCAD DB Library Manager")
+        self.add_part_window = ttk.Toplevel(self.root)
         self.add_part_window.title("Add Part")
 
         # Create and pack labels and entry widgets for input fields
-        fields = ["Description", "Component Type", "Datasheet", "Footprint Ref",
-                  "Symbol Ref", "Model Ref", "KiCad Part Number", "Manufacturer Part Number",
-                  "Manufacturer", "Manufacturer Part URL", "Note", "Value"]
+        fields = [
+            "Description", "Datasheet", "Footprint Ref", "Symbol Ref",
+            "Model Ref", "KiCad Part Number", "Manufacturer Part Number",
+            "Manufacturer", "Manufacturer Part URL", "Note", "Value"
+        ]
         self.entries = {}
         for i, field in enumerate(fields):
             ttk.Label(self.add_part_window, text=field).grid(row=i, column=0)
@@ -21,20 +23,30 @@ class mainGUI():
             entry.grid(row=i, column=1)
             self.entries[field] = entry
 
+        # Create a Combobox for Component Type
+        ttk.Label(self.add_part_window, text="Component Type").grid(row=len(fields), column=0)
+        self.component_type_combobox = ttk.Combobox(self.add_part_window, values=[
+            '', 'Resistor', 'Capacitor', 'Connector', 'Diode', 'Electro Mechanical',
+            'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
+        ])
+        self.component_type_combobox.grid(row=len(fields), column=1)
+
         # Create button to add part
         self.add_part_button = ttk.Button(
             self.add_part_window, text="Add Part", command=self._add_part)
-        self.add_part_button.grid(row=len(fields), column=0, columnspan=2)
+        self.add_part_button.grid(row=len(fields) + 1, column=0, columnspan=2)
 
     def _add_part(self):
-        # Retrieve values from entry widgets
+        # Retrieve values from entry widgets and combobox
         values = [self.entries[field].get() for field in self.entries]
+        component_type = self.component_type_combobox.get()
+        values.insert(1, component_type)  # Insert component_type at index 1
 
         # Insert values into the database
         sql = """INSERT INTO parts (description, component_type, datasheet, footprint_ref,
-                 symbol_ref, model_ref, kicad_part_number, manufacturer_part_number,
-                 manufacturer, manufacturer_part_url, note, value)
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                symbol_ref, model_ref, kicad_part_number, manufacturer_part_number,
+                manufacturer, manufacturer_part_url, note, value)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         self.cursor.execute(sql, values)
         self.db_connection.commit()
 
@@ -131,17 +143,18 @@ class mainGUI():
         # Create buttons for actions
         self.add_part_button = ttk.Button(
             pane, text="Add Part", command=self._open_add_part_window)
-        self.add_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
+        self.add_part_button.pack(expand=True, side=ttk.LEFT, padx=5, pady=5)
 
         self.add_supplier_button = ttk.Button(
             pane, text="Add Supplier", command=self._open_add_supplier_window)
-        self.add_supplier_button.pack(side=ttk.RIGHT, padx=5, pady=5)
+        self.add_supplier_button.pack(expand=True, side=ttk.RIGHT, padx=5, pady=5)
 
     def __init__(self, db_connection) -> None:
         self.db_connection = db_connection
         self.cursor = self.db_connection.cursor()
         self.root = tk.Tk()
         self.style = Style(theme='darkly')  # Using the "darkly" theme
+        self.style.theme_use("darkly")
         self.root.title("KiCAD DB Library Manager")
         self.root.geometry("800x600")
 
