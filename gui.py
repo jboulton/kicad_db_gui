@@ -81,8 +81,7 @@ class mainGUI():
                   for field in self.supplier_entries]
 
         # Insert values into the database
-        sql = """INSERT INTO supplier (supplier_name, supplier_address, supplier_web_url,
-                 supplier_phone, supplier_email) VALUES (%s, %s, %s, %s, %s)"""
+        sql = """INSERT INTO supplier (supplier_name, supplier_address, supplier_web_url, supplier_phone, supplier_email) VALUES (%s, %s, %s, %s, %s)"""
         self.cursor.execute(sql, values)
         self.db_connection.commit()
 
@@ -114,9 +113,8 @@ class mainGUI():
         pane.pack(fill=ttk.BOTH)
         self.tree = ttk.Treeview(pane)
         self.tree.pack(fill=ttk.BOTH, expand=True)
-        # kicad_part_number, description, component_type, value, symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
-        self.tree["columns"] = ("description", "component_type", "value",
-                                "symbol_ref", "footprint_ref", "manufacturer", "manufacturer_part_number")
+
+        self.tree["columns"] = ("description", "component_type", "value", "symbol_ref", "footprint_ref", "manufacturer", "manufacturer_part_number")
         self.tree.heading("#0", text="KiCad Part Number")
         self.tree.heading("description", text="Description")
         self.tree.heading("component_type", text="Component Type")
@@ -124,8 +122,7 @@ class mainGUI():
         self.tree.heading("symbol_ref", text="Symbol reference")
         self.tree.heading("footprint_ref", text="Footprint reference")
         self.tree.heading("manufacturer", text="Manufacturer")
-        self.tree.heading("manufacturer_part_number",
-                          text="Manufacturer Part Number")
+        self.tree.heading("manufacturer_part_number", text="Manufacturer Part Number")
         self.tree.pack(side=ttk.TOP, fill=ttk.BOTH, expand=True)
 
         # Fetch existing parts from the database and populate the Treeview

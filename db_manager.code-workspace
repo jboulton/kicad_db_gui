@@ -9,9 +9,10 @@
         "flake8.args": [
             "--config=${workspaceFolder}/.pylintrc"
         ],
+        "autopep8.args": ["--max-line-length", "250", "--experimental"],
         "[python]": {
             "editor.defaultFormatter": "ms-python.autopep8",
-            "editor.formatOnSave": true
+            "editor.formatOnSave": true,
           }
     },
     "extensions": {
