@@ -5,7 +5,7 @@ import logging
 import logging.config
 import logging.handlers
 import pathlib
-
+import signal
 import psycopg2
 import gui
 
@@ -15,12 +15,13 @@ logger = logging.getLogger("DashN2kMonitor")
 CONFIG_FILENAME = "db_manager.ini"
 SHUTDOWN = False
 CONFIG_FILE_PARSER = None
+MAIN_GUI = None
 
 
 def _signal_cntrl_c(os_signal, os_frame):
-    global SHUTDOWN  # pylint: disable=global-statement
     logger.info("Shutdown")
-    SHUTDOWN = True
+    if MAIN_GUI:
+        MAIN_GUI.close()
 
 
 def _get_log_level(level) -> int:
@@ -120,6 +121,8 @@ def _make_db_connection(**kwargs):
 
 def main():
     """The main Shebang!"""
+    # Catch CNTRL-C signal
+    signal.signal(signal.SIGINT, _signal_cntrl_c)
     args = _parse_commandline_arguments()
     config = _parse_config()
     log_level = args.verbose
@@ -130,7 +133,8 @@ def main():
 
     logger.info("Starting up")
     db_connection = _make_db_connection(**config['DATABASE'])
-    main_gui = gui.mainGUI(db_connection)
+    global MAIN_GUI
+    MAIN_GUI = gui.mainGUI(db_connection)
 
 
 if __name__ == "__main__":
