@@ -1,5 +1,6 @@
 
 import tkinter as tk
+import tkinter.messagebox as messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap import Style
 
@@ -7,7 +8,7 @@ from ttkbootstrap import Style
 class mainGUI():
 
     def _open_add_part_window(self):
-        self.add_part_window = ttk.Toplevel(self.root)
+        self.add_part_window = ttk.Toplevel("Add Part")
         self.add_part_window.title("Add Part")
 
         # Create and pack labels and entry widgets for input fields
@@ -141,13 +142,72 @@ class mainGUI():
         self._populate_parts_tree()
 
         # Create buttons for actions
-        self.add_part_button = ttk.Button(
-            pane, text="Add Part", command=self._open_add_part_window)
+        self.add_part_button = ttk.Button(pane, text="Add Part", command=self._open_add_part_window)
         self.add_part_button.pack(expand=True, side=ttk.LEFT, padx=5, pady=5)
 
-        self.add_supplier_button = ttk.Button(
-            pane, text="Add Supplier", command=self._open_add_supplier_window)
+        self.add_supplier_button = ttk.Button(pane, text="Add Supplier", command=self._open_add_supplier_window)
         self.add_supplier_button.pack(expand=True, side=ttk.RIGHT, padx=5, pady=5)
+
+        self.edit_part_button = ttk.Button(pane, text="Edit Part", command=self._edit_part)
+        self.edit_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
+
+    def _edit_part(self):
+        # Get the selected item from the Treeview
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "No part selected.")
+            return
+
+        # Open a window to edit the selected part
+        selected_part_id = selected_item[0]  # Get the ID of the selected item
+        selected_part = self.tree.item(selected_part_id)
+        part_details = selected_part["values"]
+
+        # Open an edit window with the details of the selected part pre-filled
+        self.edit_part_window = tk.Toplevel(self.root)
+        self.edit_part_window.title("Edit Part")
+
+        # Create and pack labels and entry widgets for input fields
+        fields = [
+            "Description", "Component Type", "Datasheet", "Footprint Ref",
+            "Symbol Ref", "Model Ref", "KiCad Part Number", "Manufacturer Part Number",
+            "Manufacturer", "Manufacturer Part URL", "Note", "Value"
+        ]
+        self.entries = {}
+        for i, field in enumerate(fields):
+            ttk.Label(self.edit_part_window, text=field).grid(row=i, column=0)
+            entry = ttk.Entry(self.edit_part_window)
+            entry.grid(row=i, column=1)
+            # Pre-fill entry with existing value if available
+            if i < len(part_details):
+                entry.insert(0, part_details[i])
+            self.entries[field] = entry
+
+        # Create button to update part
+        self.update_part_button = ttk.Button(self.edit_part_window, text="Update Part", command=self._update_part)
+        self.update_part_button.grid(row=len(fields), column=0, columnspan=2)
+
+    def _update_part(self):
+        # Retrieve values from entry widgets
+        values = [self.entries[field].get() for field in self.entries]
+
+        # Get the selected item from the Treeview
+        selected_item = self.tree.selection()
+        selected_part_id = selected_item[0]  # Get the ID of the selected item
+
+        # Update values in the Treeview
+        self.tree.item(selected_part_id, values=values)
+
+        # Update values in the database
+        sql = """UPDATE parts SET description = %s, component_type = %s, datasheet = %s, footprint_ref = %s,
+                symbol_ref = %s, model_ref = %s, manufacturer_part_number = %s,
+                manufacturer = %s, manufacturer_part_url = %s, note = %s, value = %s
+                WHERE kicad_part_number = %s"""
+        self.cursor.execute(sql, values[1:] + [values[0]])  # Exclude KiCad Part Number from the values
+        self.db_connection.commit()
+
+        # Close the edit part window
+        self.edit_part_window.destroy()
 
     def __init__(self, db_connection) -> None:
         self.db_connection = db_connection
