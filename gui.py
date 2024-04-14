@@ -11,6 +11,8 @@ class mainGUI():
         self.add_part_window = ttk.Toplevel("Add Part")
         self.add_part_window.title("Add Part")
 
+        self.add_part_window.columnconfigure(1, weight=1)
+
         # Create and pack labels and entry widgets for input fields
         fields = [
             "Description", "Datasheet", "Footprint Ref", "Symbol Ref",
@@ -19,18 +21,18 @@ class mainGUI():
         ]
         self.entries = {}
         for i, field in enumerate(fields):
-            ttk.Label(self.add_part_window, text=field).grid(row=i, column=0)
+            ttk.Label(self.add_part_window, text=field).grid(row=i, column=0, sticky="e")
             entry = ttk.Entry(self.add_part_window)
-            entry.grid(row=i, column=1)
+            entry.grid(row=i, column=1, sticky="ew")
             self.entries[field] = entry
 
         # Create a Combobox for Component Type
-        ttk.Label(self.add_part_window, text="Component Type").grid(row=len(fields), column=0)
+        ttk.Label(self.add_part_window, text="Component Type").grid(row=len(fields), column=0, sticky="e")
         self.component_type_combobox = ttk.Combobox(self.add_part_window, values=[
             '', 'Resistor', 'Capacitor', 'Connector', 'Diode', 'Electro Mechanical',
             'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
         ])
-        self.component_type_combobox.grid(row=len(fields), column=1)
+        self.component_type_combobox.grid(row=len(fields), column=1, sticky="ew")
 
         # Create button to add part
         self.add_part_button = ttk.Button(
@@ -72,21 +74,20 @@ class mainGUI():
     def _open_add_supplier_window(self):
         self.add_supplier_window = ttk.Toplevel("Add Supplier")
         self.add_supplier_window.title("Add Supplier")
-
+        self.add_supplier_window.columnconfigure(1, weight=1)
         # Create and pack labels and entry widgets for input fields
         fields = ["Supplier Name", "Address", "Web URL", "Phone", "Email"]
         self.supplier_entries = {}
         for i, field in enumerate(fields):
-            ttk.Label(self.add_supplier_window,
-                      text=field).grid(row=i, column=0)
+            ttk.Label(self.add_supplier_window, text=field).grid(row=i, column=0, sticky="e")
             entry = ttk.Entry(self.add_supplier_window)
-            entry.grid(row=i, column=1)
+            entry.grid(row=i, column=1, sticky="ew")
             self.supplier_entries[field] = entry
 
         # Create button to add supplier
         self.add_supplier_button = ttk.Button(
             self.add_supplier_window, text="Add Supplier", command=self._add_supplier)
-        self.add_supplier_button.grid(row=len(fields), column=0, columnspan=2)
+        self.add_supplier_button.grid(row=len(fields), column=0, columnspan=2, pady=5)
 
     def _add_supplier(self):
         # Retrieve values from entry widgets
@@ -167,6 +168,7 @@ class mainGUI():
         self.edit_part_window = tk.Toplevel(self.root)
         self.edit_part_window.title("Edit Part")
 
+        self.edit_part_window.columnconfigure(1, weight=1)
         # Create and pack labels and entry widgets for input fields
         fields = [
             "Description", "Component Type", "Datasheet", "Footprint Ref",
@@ -175,9 +177,9 @@ class mainGUI():
         ]
         self.entries = {}
         for i, field in enumerate(fields):
-            ttk.Label(self.edit_part_window, text=field).grid(row=i, column=0)
+            ttk.Label(self.edit_part_window, text=field).grid(row=i, column=0, sticky="e")
             entry = ttk.Entry(self.edit_part_window)
-            entry.grid(row=i, column=1)
+            entry.grid(row=i, column=1, sticky="ew")
             # Pre-fill entry with existing value if available
             if i < len(part_details):
                 entry.insert(0, part_details[i])
