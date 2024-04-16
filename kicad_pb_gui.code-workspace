@@ -1,0 +1,31 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "python.analysis.typeCheckingMode": "basic",
+        "flake8.args": [
+            "--config=${workspaceFolder}/.pylintrc"
+        ],
+        "autopep8.args": ["--max-line-length", "250", "--experimental"],
+        "[python]": {
+            "editor.defaultFormatter": "ms-python.autopep8",
+            "editor.formatOnSave": true,
+          }
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-python.flake8",
+            "njpwerner.autodocstring",
+            "gruntfuggly.todo-tree",
+            "ms-python.flake8",
+            "ms-python.isort",
+            "ms-python.python",
+            "ms-python.vscode-pylance",
+            "littlefoxteam.vscode-python-test-adapter",
+            "ms-python.autopep8"
+        ]
+    }
+}
