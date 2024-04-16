@@ -36,7 +36,7 @@ def _get_log_level(level) -> int:
 
 
 def _setup_logging():
-    config_file = pathlib.Path("logging-stderr-json-file.json")
+    config_file = pathlib.Path("logger_config.json")
     with open(config_file, encoding='utf-8') as f_in:
         config = json.load(f_in)
 
@@ -94,7 +94,7 @@ def _parse_config():
             'db_password': '',
             'db_host': 'localhost',
             'db_port': 5432,
-            'db_database': ''
+            'db_database': 'kicad_lib'
         }
         CONFIG_FILE_PARSER['DEFAULT'] = default  # type: ignore
         CONFIG_FILE_PARSER['KICAD_DB_MANAGER'] = kicad_db_manager
