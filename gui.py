@@ -24,6 +24,10 @@ class mainGUI():
             ttk.Label(self.add_part_window, text=field).grid(row=i, column=0, sticky="e")
             entry = ttk.Entry(self.add_part_window)
             entry.grid(row=i, column=1, sticky="ew")
+            if field == "Footprint Ref":
+                entry.insert(0, "db_footprints:")
+            if field == "Symbol Ref":
+                entry.insert(0, "db_library:")
             self.entries[field] = entry
 
         # Create a Combobox for Component Type
@@ -46,7 +50,7 @@ class mainGUI():
         values.append(component_type)  # Insert component_type at index 1
         print(values)
         # Insert values into the database
-        if values[2] == '' or values[3] == '' or values[4] == '' or values[5] == '':
+        if values[2] == '' or values[3] == '' or values[5] == '':
             messagebox.showerror("Error", "Need to have KiCAD Part Number, Man Part Number, Footprint Ref, Symbol Ref.")
             return
         sql = """INSERT INTO parts (description, datasheet, footprint_ref,
