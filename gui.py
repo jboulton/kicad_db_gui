@@ -67,15 +67,22 @@ class mainGUI():
         self.tree.delete(*self.tree.get_children())
         self._populate_parts_tree()
 
-    def _populate_parts_tree(self):
-        # Fetch existing parts from the database
-        self.cursor.execute(
-            "SELECT kicad_part_number, description, component_type, value, symbol_ref, footprint_ref, manufacturer, manufacturer_part_number FROM parts")
+    def _populate_parts_tree(self, component_type_filter=None):
+        # Clear current Treeview data
+        self.tree.delete(*self.tree.get_children())
+
+        # Fetch existing parts from the database based on the filter
+        if component_type_filter:
+            sql = """SELECT kicad_part_number, description, component_type, value, symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
+                    FROM parts WHERE component_type = %s"""
+            self.cursor.execute(sql, (component_type_filter,))
+        else:
+            self.cursor.execute("""SELECT kicad_part_number, description, component_type, value, symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
+                                FROM parts""")
         parts = self.cursor.fetchall()
 
         # Insert parts into the Treeview
         for part in parts:
-            print(part)
             self.tree.insert("", "end", text=part[0], values=(
                 part[1], part[2], part[3], part[4], part[5], part[6], part[7]), tags="center")
 
@@ -133,12 +140,18 @@ class mainGUI():
         return object_tree
 
     def _create_main_content(self):
+        # Create a frame to hold the main content
         pane = ttk.Frame(self.root)
-        pane.pack(fill=ttk.BOTH)
-        self.tree = ttk.Treeview(pane)
-        self.tree.pack(fill=ttk.BOTH, expand=True)
+        pane.pack(fill=ttk.BOTH, expand=True)
 
+        # Create Treeview widget
+        self.tree = ttk.Treeview(pane)
+        self.tree.pack(side=ttk.TOP, fill=ttk.BOTH, expand=True)
+
+        # Define columns
         self.tree["columns"] = ("description", "component_type", "value", "symbol_ref", "footprint_ref", "manufacturer", "manufacturer_part_number")
+
+        # Add headings
         self.tree.heading("#0", text="KiCad Part Number")
         self.tree.heading("description", text="Description")
         self.tree.heading("component_type", text="Component Type")
@@ -147,20 +160,51 @@ class mainGUI():
         self.tree.heading("footprint_ref", text="Footprint reference")
         self.tree.heading("manufacturer", text="Manufacturer")
         self.tree.heading("manufacturer_part_number", text="Manufacturer Part Number")
-        self.tree.pack(side=ttk.TOP, fill=ttk.BOTH, expand=True)
 
         # Fetch existing parts from the database and populate the Treeview
         self._populate_parts_tree()
 
         # Create buttons for actions
         self.add_part_button = ttk.Button(pane, text="Add Part", command=self._open_add_part_window)
-        self.add_part_button.pack(expand=True, side=ttk.LEFT, padx=5, pady=5)
+        self.add_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
 
         self.add_supplier_button = ttk.Button(pane, text="Add Supplier", command=self._open_add_supplier_window)
-        self.add_supplier_button.pack(expand=True, side=ttk.RIGHT, padx=5, pady=5)
+        self.add_supplier_button.pack(side=ttk.RIGHT, padx=5, pady=5)
 
         self.edit_part_button = ttk.Button(pane, text="Edit Part", command=self._edit_part)
         self.edit_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
+
+        # Create a menu for filtering component types
+        self.component_type_menu = tk.Menu(self.root, tearoff=0)
+        self.component_type_menu.add_command(label="All", command=lambda: self._filter_by_component_type(""))
+        self.component_type_menu.add_command(label="Resistor", command=lambda: self._filter_by_component_type("Resistor"))
+        self.component_type_menu.add_command(label="Capacitor", command=lambda: self._filter_by_component_type("Capacitor"))
+        self.component_type_menu.add_command(label="Connector", command=lambda: self._filter_by_component_type("Connector"))
+        self.component_type_menu.add_command(label="Diode", command=lambda: self._filter_by_component_type("Diode"))
+        self.component_type_menu.add_command(label="Electro Mechanical", command=lambda: self._filter_by_component_type("Electro Mechanical"))
+        self.component_type_menu.add_command(label="Inductor", command=lambda: self._filter_by_component_type("Inductor"))
+        self.component_type_menu.add_command(label="Mechanical", command=lambda: self._filter_by_component_type("Mechanical"))
+        self.component_type_menu.add_command(label="Opto", command=lambda: self._filter_by_component_type("Opto"))
+        self.component_type_menu.add_command(label="OpAmp", command=lambda: self._filter_by_component_type("OpAmp"))
+        self.component_type_menu.add_command(label="Opto", command=lambda: self._filter_by_component_type("Opto"))
+        self.component_type_menu.add_command(label="Transister", command=lambda: self._filter_by_component_type("Transister"))
+        self.component_type_menu.add_command(label="Power Supply IC", command=lambda: self._filter_by_component_type("Power Supply IC"))
+        self.component_type_menu.add_command(label="Semiconductor", command=lambda: self._filter_by_component_type("Semiconductor"))
+        # Add other component types similarly
+        # Create a Filter button to apply the filter
+        self.filter_button = ttk.Button(pane, text="Filter", command=self._apply_filter)
+        self.filter_button.pack(side=ttk.RIGHT, padx=5, pady=5)
+
+    def _filter_by_component_type(self, component_type):
+        # Clear current Treeview data
+        self.tree.delete(*self.tree.get_children())
+        self._populate_parts_tree(component_type)
+        # Fetch data from the database based on the selected component type
+        # Populate the Treeview with the filtered data
+
+    def _apply_filter(self):
+        # Display the component type filter menu
+        self.component_type_menu.post(self.filter_button.winfo_rootx(), self.filter_button.winfo_rooty() + self.filter_button.winfo_height())
 
     def _edit_part(self):
         # Get the selected item from the Treeview
@@ -257,6 +301,19 @@ class mainGUI():
         self.tree.delete(*self.tree.get_children())
         self._populate_parts_tree()
 
+    def _center_window(self, window):
+        window.update_idletasks()  # Update the window to get correct width and height
+        width = window.winfo_width()
+        height = window.winfo_height()
+
+        # Calculate the position to center the window
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+
+        window.geometry(f'{width}x{height}+{x}+{y}')
+
     def __init__(self, db_connection) -> None:
         self.db_connection = db_connection
         self.cursor = self.db_connection.cursor()
@@ -272,7 +329,8 @@ class mainGUI():
 
         self._create_status_bar(self.root)
         self._create_main_content()
-
+        self.root.geometry("800x600")
+        self._center_window(self.root)
         self.root.mainloop()
 
     def close(self):
