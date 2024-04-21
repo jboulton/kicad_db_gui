@@ -1,8 +1,9 @@
 
 import tkinter as tk
-import tkinter.messagebox as messagebox
+from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap import Style
+
 
 class mainGUI():
 
@@ -171,7 +172,7 @@ class mainGUI():
         self.edit_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
 
         # Create a menu for filtering component types
-        self.component_type_menu = tk.Menu(self.root, tearoff=0)
+        self.component_type_menu = ttk.Menu(self.root, tearoff=0)
         for component_type in self.component_types:
             self.component_type_menu.add_command(label=component_type or "All", command=lambda ct=component_type: self._filter_by_component_type(ct))
 
@@ -308,8 +309,9 @@ class mainGUI():
             'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
         ]
         self.cursor = self.db_connection.cursor()
-        self.root = tk.Tk()
-        self.style = Style(theme='darkly')  # Using the "darkly" theme
+        self.style = Style(theme='pulse')  # Using the "darkly" theme
+
+        self.root = self.style.master
         self.style.theme_use("darkly")
         self.root.title("KiCAD DB Library Manager")
         self.root.geometry("800x600")
