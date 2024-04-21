@@ -4,18 +4,34 @@ import json
 import logging
 import logging.config
 import logging.handlers
+import os
 import pathlib
 import signal
+import sys
 import psycopg2
 import gui
 
 logger = logging.getLogger("DashN2kMonitor")
 
-
 CONFIG_FILENAME = "db_manager.ini"
 SHUTDOWN = False
 CONFIG_FILE_PARSER = None
 MAIN_GUI = None
+
+if sys.platform.startswith('darwin'):
+    # Set app name, if PyObjC is installed
+    # Python 2 has PyObjC preinstalled
+    # Python 3: pip3 install pyobjc-framework-Cocoa
+    try:
+        from Foundation import NSBundle
+        bundle = NSBundle.mainBundle()
+        if bundle:
+            app_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+            app_info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+            if app_info:
+                app_info['CFBundleName'] = "KiCAD Db Manager"
+    except ImportError:
+        pass
 
 
 def _signal_cntrl_c(os_signal, os_frame):
@@ -74,6 +90,7 @@ def _save_config():
 
 
 def _parse_config():
+
     global CONFIG_FILE_PARSER  # pylint: disable=global-statement
     new_ini_file = False
     CONFIG_FILE_PARSER = configparser.ConfigParser()

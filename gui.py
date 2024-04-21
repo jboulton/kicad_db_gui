@@ -4,7 +4,6 @@ import tkinter.messagebox as messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap import Style
 
-
 class mainGUI():
 
     def _open_add_part_window(self):
@@ -32,10 +31,7 @@ class mainGUI():
 
         # Create a Combobox for Component Type
         ttk.Label(self.add_part_window, text="Component Type").grid(row=len(fields), column=0, sticky="e")
-        self.component_type_combobox = ttk.Combobox(self.add_part_window, values=[
-            '', 'Resistor', 'Capacitor', 'Connector', 'Diode', 'Electro Mechanical',
-            'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
-        ])
+        self.component_type_combobox = ttk.Combobox(self.add_part_window, values=self.component_types)
         self.component_type_combobox.grid(row=len(fields), column=1, sticky="ew")
 
         # Create button to add part
@@ -176,20 +172,9 @@ class mainGUI():
 
         # Create a menu for filtering component types
         self.component_type_menu = tk.Menu(self.root, tearoff=0)
-        self.component_type_menu.add_command(label="All", command=lambda: self._filter_by_component_type(""))
-        self.component_type_menu.add_command(label="Resistor", command=lambda: self._filter_by_component_type("Resistor"))
-        self.component_type_menu.add_command(label="Capacitor", command=lambda: self._filter_by_component_type("Capacitor"))
-        self.component_type_menu.add_command(label="Connector", command=lambda: self._filter_by_component_type("Connector"))
-        self.component_type_menu.add_command(label="Diode", command=lambda: self._filter_by_component_type("Diode"))
-        self.component_type_menu.add_command(label="Electro Mechanical", command=lambda: self._filter_by_component_type("Electro Mechanical"))
-        self.component_type_menu.add_command(label="Inductor", command=lambda: self._filter_by_component_type("Inductor"))
-        self.component_type_menu.add_command(label="Mechanical", command=lambda: self._filter_by_component_type("Mechanical"))
-        self.component_type_menu.add_command(label="Opto", command=lambda: self._filter_by_component_type("Opto"))
-        self.component_type_menu.add_command(label="OpAmp", command=lambda: self._filter_by_component_type("OpAmp"))
-        self.component_type_menu.add_command(label="Opto", command=lambda: self._filter_by_component_type("Opto"))
-        self.component_type_menu.add_command(label="Transister", command=lambda: self._filter_by_component_type("Transister"))
-        self.component_type_menu.add_command(label="Power Supply IC", command=lambda: self._filter_by_component_type("Power Supply IC"))
-        self.component_type_menu.add_command(label="Semiconductor", command=lambda: self._filter_by_component_type("Semiconductor"))
+        for component_type in self.component_types:
+            self.component_type_menu.add_command(label=component_type or "All", command=lambda ct=component_type: self._filter_by_component_type(ct))
+
         # Add other component types similarly
         # Create a Filter button to apply the filter
         self.filter_button = ttk.Button(pane, text="Filter", command=self._apply_filter)
@@ -316,6 +301,12 @@ class mainGUI():
 
     def __init__(self, db_connection) -> None:
         self.db_connection = db_connection
+
+        # TODO: Should get this from the database
+        self.component_types = [
+            '', 'Resistor', 'Capacitor', 'Connector', 'Diode', 'Electro Mechanical',
+            'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
+        ]
         self.cursor = self.db_connection.cursor()
         self.root = tk.Tk()
         self.style = Style(theme='darkly')  # Using the "darkly" theme
