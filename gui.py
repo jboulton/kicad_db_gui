@@ -63,6 +63,81 @@ class mainGUI():
         self.tree.delete(*self.tree.get_children())
         self._populate_parts_tree()
 
+    def _open_add_module_window(self):
+        self.add_module_window = ttk.Toplevel()
+        self.add_module_window.title("Add Module")
+
+        # Create and pack labels and entry widgets for module details
+        module_fields = ["Description", "Datasheet", "Footprint Ref", "Symbol Ref", "Model Ref", "KiCad Part Number", "Manufacturer Part Number", "Manufacturer", "Manufacturer Part URL", "Note", "Value"]
+        self.module_entries = {}
+        for i, field in enumerate(module_fields):
+            ttk.Label(self.add_module_window, text=field).grid(row=i, column=0)
+            entry = ttk.Entry(self.add_module_window)
+            entry.grid(row=i, column=1)
+            self.module_entries[field] = entry
+
+        # Create a Treeview to display selected parts
+        self.selected_parts_tree = ttk.Treeview(self.add_module_window, columns=("Part",), selectmode="extended")
+        self.selected_parts_tree.heading("#0", text="Selected Parts")
+        self.selected_parts_tree.column("#0", width=200)  # Adjust width as needed
+        self.selected_parts_tree.grid(row=len(module_fields), columnspan=2, sticky="ew")
+
+        # Create buttons to add and remove parts
+        add_part_button = ttk.Button(self.add_module_window, text="Add Part", command=self._add_part_to_module)
+        add_part_button.grid(row=len(module_fields) + 1, column=0)
+        remove_part_button = ttk.Button(self.add_module_window, text="Remove Part", command=self._remove_part_from_module)
+        remove_part_button.grid(row=len(module_fields) + 1, column=1)
+
+        # Create a Combobox to select available parts
+        self.parts_combobox = ttk.Combobox(self.add_module_window, state="readonly")
+        self.parts_combobox.grid(row=len(module_fields) + 2, columnspan=2, sticky="ew")
+        self._populate_parts_combobox()  # Populate the combobox with available parts
+
+        # Create button to add module
+        add_module_button = ttk.Button(self.add_module_window, text="Add Module", command=self._add_module)
+        add_module_button.grid(row=len(module_fields) + 3, columnspan=2)
+
+    def _populate_parts_combobox(self):
+        # Fetch existing parts from the database
+        self.cursor.execute("SELECT parts_uuid, kicad_part_number FROM parts")
+        parts = self.cursor.fetchall()
+
+        # Insert parts into the combobox
+        part_names = [part[1] for part in parts]  # kicad_part_number
+        self.parts_uuid_map = {part[1]: part[0] for part in parts}  # Map kicad_part_number to parts_uuid
+        self.parts_combobox['values'] = part_names
+
+    def _add_part_to_module(self):
+        selected_part = self.parts_combobox.get()
+        self.selected_parts_tree.insert("", "end", text=selected_part)
+
+    def _remove_part_from_module(self):
+        selected_items = self.selected_parts_tree.selection()
+        for item in selected_items:
+            self.selected_parts_tree.delete(item)
+
+    def _add_module(self):
+        # Retrieve values from entry widgets for module details
+        module_values = [self.module_entries[field].get() for field in self.module_entries]
+
+        # Insert module details into the module table
+        module_sql = """INSERT INTO module (description, datasheet, footprint_ref, symbol_ref, model_ref, kicad_part_number, manufacturer_part_number, manufacturer, manufacturer_part_url, note, value)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING module_uuid"""
+        self.cursor.execute(module_sql, module_values)
+        module_uuid = self.cursor.fetchone()[0]  # Get the UUID of the inserted module
+
+        # Retrieve selected parts from the Treeview
+        selected_parts = [self.selected_parts_tree.item(item, "text") for item in self.selected_parts_tree.get_children()]
+
+        # Insert selected parts into the module_parts table
+        module_parts_sql = """INSERT INTO module_parts (module_uuid, part_uuid)
+                            VALUES (%s, %s)"""
+        for part in selected_parts:
+            self.cursor.execute(module_parts_sql, (module_uuid, self.parts_uuid_map[part]))
+
+        self.db_connection.commit()
+        self.add_module_window.destroy()
+
     def _populate_parts_tree(self, component_type_filter=None):
         # Clear current Treeview data
         self.tree.delete(*self.tree.get_children())
@@ -162,6 +237,9 @@ class mainGUI():
 
         # Create buttons for actions
         self.add_part_button = ttk.Button(pane, text="Add Part", command=self._open_add_part_window)
+        self.add_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
+
+        self.add_part_button = ttk.Button(pane, text="Add Module", command=self._open_add_module_window)
         self.add_part_button.pack(side=ttk.LEFT, padx=5, pady=5)
 
         self.add_supplier_button = ttk.Button(pane, text="Add Supplier", command=self._open_add_supplier_window)
