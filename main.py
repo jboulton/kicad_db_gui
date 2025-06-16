@@ -9,7 +9,7 @@ import pathlib
 import signal
 import sys
 import psycopg2
-import gui
+import main_gui
 
 logger = logging.getLogger("DashN2kMonitor")
 
@@ -151,7 +151,8 @@ def main():
     logger.info("Starting up")
     db_connection = _make_db_connection(**config['DATABASE'])
     global MAIN_GUI
-    MAIN_GUI = gui.mainGUI(db_connection)
+    MAIN_GUI = main_gui.MainGUI(db_connection)
+    MAIN_GUI.run()
 
 
 if __name__ == "__main__":
