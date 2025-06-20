@@ -3,10 +3,10 @@ KiCad Database Library Manager - Refactored Version
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-from ttkbootstrap import Style
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from ttkbootstrap import Style
 
 
 @dataclass
@@ -75,7 +75,7 @@ class DatabaseManager:
         self.cursor.execute(sql, values)
         self.db_connection.commit()
 
-    def update_part(self, kicad_part_number: str, part: Part) -> None:
+    def update_part(self, part: Part) -> None:
         """Update an existing part in the database."""
         sql = """UPDATE parts SET description = %s, datasheet = %s, footprint_ref = %s,
                 symbol_ref = %s, model_ref = %s, manufacturer_part_number = %s,
@@ -85,7 +85,7 @@ class DatabaseManager:
             part.description, part.datasheet, part.footprint_ref,
             part.symbol_ref, part.model_ref, part.manufacturer_part_number,
             part.manufacturer, part.manufacturer_part_url, part.note,
-            part.value, part.component_type, kicad_part_number
+            part.value, part.component_type, part.kicad_part_number
         ]
         self.cursor.execute(sql, values)
         self.db_connection.commit()
@@ -214,9 +214,18 @@ class BaseWindow(ABC):
             self.entries[items] = entry
 
     def _create_submit_button(self, text: str, row: int) -> None:
-        """Create a submit button."""
-        button = ttk.Button(self.window, text=text, command=self._on_submit)
-        button.grid(row=row, column=0, columnspan=2, pady=10)
+        """Create submit and close buttons."""
+        # Create a frame to hold both buttons
+        button_frame = ttk.Frame(self.window)
+        button_frame.grid(row=row, column=0, columnspan=2, pady=10)
+
+        # Submit button
+        submit_button = ttk.Button(button_frame, text=text, command=self._on_submit)
+        submit_button.pack(side="left", padx=(0, 5))
+
+        # Close button
+        close_button = ttk.Button(button_frame, text="Close", command=self.destroy)
+        close_button.pack(side="left", padx=(5, 0))
 
     def destroy(self) -> None:
         """Close the window."""
@@ -324,6 +333,7 @@ class EditPartWindow(BaseWindow):
             description=self.entries["Description"].get(),
             datasheet=self.entries["Datasheet"].get(),
             footprint_ref=self.entries["Footprint Ref"].get(),
+            kicad_part_number=self.kicad_part_number,
             symbol_ref=self.entries["Symbol Ref"].get(),
             model_ref=self.entries["Model Ref"].get(),
             manufacturer_part_number=self.entries["Manufacturer Part Number"].get(),
@@ -341,7 +351,7 @@ class EditPartWindow(BaseWindow):
             return
 
         try:
-            self.db_manager.update_part(self.kicad_part_number, part)
+            self.db_manager.update_part(part)
             self.refresh_callback()
             self.destroy()
         except Exception as e:
@@ -493,8 +503,8 @@ class MainGUI:
         self.root.config(menu=menu_bar)
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
-        file_menu.add_command(label="New")
-        file_menu.add_command(label="Open")
+        file_menu.add_command(label="New Part", command=self._open_add_part_window)
+        file_menu.add_command(label="Edit Part", command=self._open_edit_part_window)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         menu_bar.add_cascade(label="File", menu=file_menu)
