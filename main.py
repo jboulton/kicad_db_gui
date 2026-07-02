@@ -17,6 +17,7 @@ CONFIG_FILENAME = "db_manager.ini"
 SHUTDOWN = False
 CONFIG_FILE_PARSER = None
 MAIN_GUI = None
+DB_CONNECTION = None  # the currently-active psycopg2 connection
 
 if sys.platform.startswith('darwin'):
     # Set app name, if PyObjC is installed
@@ -136,6 +137,42 @@ def _make_db_connection(**kwargs):
     return connection
 
 
+def _apply_new_db_settings(new_settings: dict):
+    """Callback handed to MainGUI so its Database Connection window can
+    swap connections at runtime.
+
+    Attempts to connect with new_settings first. Only if that succeeds do we
+    persist the settings to the .ini file and close the previous connection -
+    so a bad host/password/etc. leaves the running app exactly as it was,
+    just with an error dialog shown to the user.
+
+    Returns the new live connection on success. Raises on failure (psycopg2
+    exceptions propagate up to MainGUI/DatabaseConnectionWindow as-is, which
+    is enough detail for the error dialog).
+    """
+    global DB_CONNECTION  # pylint: disable=global-statement
+
+    new_connection = _make_db_connection(**new_settings)
+
+    # Only persist once we know the new connection actually works.
+    CONFIG_FILE_PARSER['DATABASE'] = {k: str(v) for k, v in new_settings.items()}
+    _save_config()
+
+    old_connection = DB_CONNECTION
+    DB_CONNECTION = new_connection
+
+    if old_connection is not None:
+        try:
+            old_connection.close()
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("Failed to cleanly close previous database connection", exc_info=True)
+
+    logger.info("Switched database connection to %s@%s/%s",
+                new_settings.get("db_user"), new_settings.get("db_host"), new_settings.get("db_database"))
+
+    return new_connection
+
+
 def main():
     """The main Shebang!"""
     # Catch CNTRL-C signal
@@ -149,10 +186,25 @@ def main():
     _setup_logging()
 
     logger.info("Starting up")
-    db_connection = _make_db_connection(**config['DATABASE'])
+
+    global DB_CONNECTION  # pylint: disable=global-statement
+    db_settings = dict(config['DATABASE'])
+    DB_CONNECTION = _make_db_connection(**db_settings)
+
     global MAIN_GUI
-    MAIN_GUI = main_gui.MainGUI(db_connection)
-    MAIN_GUI.run()
+    MAIN_GUI = main_gui.MainGUI(
+        DB_CONNECTION,
+        connection_settings=db_settings,
+        on_update_connection=_apply_new_db_settings,
+    )
+    try:
+        MAIN_GUI.run()
+    finally:
+        if DB_CONNECTION is not None:
+            try:
+                DB_CONNECTION.close()
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Failed to cleanly close database connection on exit", exc_info=True)
 
 
 if __name__ == "__main__":

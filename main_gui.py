@@ -3,7 +3,7 @@ KiCad Database Library Manager - Refactored Version
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from ttkbootstrap import Style
@@ -24,6 +24,9 @@ class Part:
     note: str = ""
     value: str = ""
     component_type: str = ""
+    exclude_from_bom: bool = False
+    exclude_from_board: bool = False
+    exclude_from_sim: bool = False
 
 
 @dataclass
@@ -64,13 +67,15 @@ class DatabaseManager:
         """Add a new part to the database."""
         sql = """INSERT INTO parts (description, datasheet, footprint_ref,
                 symbol_ref, model_ref, kicad_part_number, manufacturer_part_number,
-                manufacturer, manufacturer_part_url, note, value, component_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                manufacturer, manufacturer_part_url, note, value, component_type,
+                exclude_from_bom, exclude_from_board, exclude_from_sim)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         values = [
             part.description, part.datasheet, part.footprint_ref,
             part.symbol_ref, part.model_ref, part.kicad_part_number,
             part.manufacturer_part_number, part.manufacturer,
-            part.manufacturer_part_url, part.note, part.value, part.component_type
+            part.manufacturer_part_url, part.note, part.value, part.component_type,
+            part.exclude_from_bom, part.exclude_from_board, part.exclude_from_sim
         ]
         self.cursor.execute(sql, values)
         self.db_connection.commit()
@@ -80,35 +85,74 @@ class DatabaseManager:
         sql = """UPDATE parts SET description = %s, datasheet = %s, footprint_ref = %s,
                 symbol_ref = %s, model_ref = %s, manufacturer_part_number = %s,
                 manufacturer = %s, manufacturer_part_url = %s, note = %s, value = %s,
-                component_type = %s WHERE kicad_part_number = %s"""
+                component_type = %s, exclude_from_bom = %s, exclude_from_board = %s,
+                exclude_from_sim = %s WHERE kicad_part_number = %s"""
         values = [
             part.description, part.datasheet, part.footprint_ref,
             part.symbol_ref, part.model_ref, part.manufacturer_part_number,
             part.manufacturer, part.manufacturer_part_url, part.note,
-            part.value, part.component_type, part.kicad_part_number
+            part.value, part.component_type,
+            part.exclude_from_bom, part.exclude_from_board, part.exclude_from_sim,
+            part.kicad_part_number
         ]
         self.cursor.execute(sql, values)
         self.db_connection.commit()
 
-    def get_parts(self, component_type_filter: Optional[str] = None) -> List[Tuple]:
-        """Retrieve parts from the database, optionally filtered by component type."""
+    # Whitelist mapping of sortable treeview columns to actual DB columns.
+    # Used to build ORDER BY safely (never interpolate raw column names from callers).
+    SORTABLE_COLUMNS = {
+        "kicad_part_number": "kicad_part_number",
+        "description": "description",
+        "component_type": "component_type",
+        "value": "value",
+        "symbol_ref": "symbol_ref",
+        "footprint_ref": "footprint_ref",
+        "manufacturer": "manufacturer",
+        "manufacturer_part_number": "manufacturer_part_number",
+    }
+
+    def get_parts(self, component_type_filter: Optional[str] = None,
+                  search_term: Optional[str] = None,
+                  sort_column: Optional[str] = None,
+                  sort_descending: bool = False) -> List[Tuple]:
+        """Retrieve parts from the database, optionally filtered by component type
+        and/or a search term, and optionally sorted by a whitelisted column."""
+        base_sql = """SELECT kicad_part_number, description, component_type, value,
+                symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
+                FROM parts"""
+
+        conditions = []
+        params: List[str] = []
+
         if component_type_filter:
-            sql = """SELECT kicad_part_number, description, component_type, value,
-                    symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
-                    FROM parts WHERE component_type = %s"""
-            self.cursor.execute(sql, (component_type_filter,))
-        else:
-            sql = """SELECT kicad_part_number, description, component_type, value,
-                    symbol_ref, footprint_ref, manufacturer, manufacturer_part_number
-                    FROM parts"""
-            self.cursor.execute(sql)
+            conditions.append("component_type = %s")
+            params.append(component_type_filter)
+
+        if search_term:
+            conditions.append("""(description ILIKE %s OR kicad_part_number ILIKE %s
+                    OR manufacturer_part_number ILIKE %s OR manufacturer ILIKE %s
+                    OR value ILIKE %s)""")
+            like_term = f"%{search_term}%"
+            params.extend([like_term] * 5)
+
+        sql = base_sql
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+
+        # Validate sort_column against the whitelist to avoid SQL injection via ORDER BY.
+        if sort_column and sort_column in self.SORTABLE_COLUMNS:
+            direction = "DESC" if sort_descending else "ASC"
+            sql += f" ORDER BY {self.SORTABLE_COLUMNS[sort_column]} {direction}"
+
+        self.cursor.execute(sql, params)
         return self.cursor.fetchall()
 
     def get_part_details(self, kicad_part_number: str) -> Optional[Tuple]:
         """Get detailed information for a specific part."""
         sql = """SELECT description, datasheet, footprint_ref, symbol_ref, model_ref,
                 manufacturer_part_number, manufacturer, manufacturer_part_url, note,
-                value, component_type FROM parts WHERE kicad_part_number = %s"""
+                value, component_type, exclude_from_bom, exclude_from_board,
+                exclude_from_sim FROM parts WHERE kicad_part_number = %s"""
         self.cursor.execute(sql, (kicad_part_number,))
         return self.cursor.fetchone()
 
@@ -213,6 +257,31 @@ class BaseWindow(ABC):
 
             self.entries[items] = entry
 
+    def _create_exclude_checkboxes(self, row: int, defaults: Dict[str, bool] | None = None) -> int:
+        """Create the exclude_from_bom/board/sim checkboxes starting at the given row.
+
+        Returns the next free row after the checkboxes.
+        """
+        defaults = defaults or {}
+        self.exclude_vars: Dict[str, tk.BooleanVar] = {}
+
+        checkbox_frame = ttk.Frame(self.window)
+        checkbox_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+
+        labels_and_keys = [
+            ("Exclude from BOM", "exclude_from_bom"),
+            ("Exclude from Board", "exclude_from_board"),
+            ("Exclude from Sim", "exclude_from_sim"),
+        ]
+
+        for i, (label, key) in enumerate(labels_and_keys):
+            var = tk.BooleanVar(value=defaults.get(key, False))
+            chk = ttk.Checkbutton(checkbox_frame, text=label, variable=var)
+            chk.grid(row=0, column=i, padx=(0 if i == 0 else 10, 0), sticky="w")
+            self.exclude_vars[key] = var
+
+        return row + 1
+
     def _create_submit_button(self, text: str, row: int) -> None:
         """Create submit and close buttons."""
         # Create a frame to hold both buttons
@@ -256,7 +325,10 @@ class AddPartWindow(BaseWindow):
         self.component_type_combobox = ttk.Combobox(self.window, values=self.component_types)
         self.component_type_combobox.grid(row=row, column=1, sticky="ew", padx=5, pady=2)
 
-        self._create_submit_button("Add Part", row + 1)
+        # Exclude checkboxes
+        row = self._create_exclude_checkboxes(row + 1)
+
+        self._create_submit_button("Add Part", row)
 
     def _on_submit(self) -> None:
         # Create Part object from form data
@@ -272,7 +344,10 @@ class AddPartWindow(BaseWindow):
             manufacturer_part_url=self.entries["Manufacturer Part URL"].get(),
             note=self.entries["Note"].get(),
             value=self.entries["Value"].get(),
-            component_type=self.component_type_combobox.get()
+            component_type=self.component_type_combobox.get(),
+            exclude_from_bom=self.exclude_vars["exclude_from_bom"].get(),
+            exclude_from_board=self.exclude_vars["exclude_from_board"].get(),
+            exclude_from_sim=self.exclude_vars["exclude_from_sim"].get()
         )
 
         # Validate
@@ -323,9 +398,18 @@ class EditPartWindow(BaseWindow):
         ttk.Label(self.window, text="Component Type").grid(row=row, column=0, sticky="e", padx=5, pady=2)
         self.component_type_combobox = ttk.Combobox(self.window, values=self.component_types)
         self.component_type_combobox.grid(row=row, column=1, sticky="ew", padx=5, pady=2)
-        self.component_type_combobox.set(part_details[-1])  # Set current component type
+        self.component_type_combobox.set(part_details[10])  # Set current component type
 
-        self._create_submit_button("Update Part", row + 1)
+        # Exclude checkboxes, pre-populated from existing values
+        # part_details indices: 11=exclude_from_bom, 12=exclude_from_board, 13=exclude_from_sim
+        exclude_defaults = {
+            "exclude_from_bom": bool(part_details[11]),
+            "exclude_from_board": bool(part_details[12]),
+            "exclude_from_sim": bool(part_details[13]),
+        }
+        row = self._create_exclude_checkboxes(row + 1, exclude_defaults)
+
+        self._create_submit_button("Update Part", row)
 
     def _on_submit(self) -> None:
         # Create Part object from form data
@@ -341,7 +425,10 @@ class EditPartWindow(BaseWindow):
             manufacturer_part_url=self.entries["Manufacturer Part URL"].get(),
             note=self.entries["Note"].get(),
             value=self.entries["Value"].get(),
-            component_type=self.component_type_combobox.get()
+            component_type=self.component_type_combobox.get(),
+            exclude_from_bom=self.exclude_vars["exclude_from_bom"].get(),
+            exclude_from_board=self.exclude_vars["exclude_from_board"].get(),
+            exclude_from_sim=self.exclude_vars["exclude_from_sim"].get()
         )
 
         # Validate
@@ -472,6 +559,95 @@ class AddSupplierWindow(BaseWindow):
             messagebox.showerror("Error", f"Failed to add supplier: {str(e)}")
 
 
+class DatabaseConnectionWindow(BaseWindow):
+    """Window for viewing/editing the database connection settings.
+
+    Unlike other dialogs, this doesn't take a DatabaseManager (there may not
+    be a working one yet) — it takes a reference to the MainGUI instance so
+    it can hand off a validated settings dict and let MainGUI coordinate the
+    actual reconnect via its on_update_connection callback.
+    """
+
+    def __init__(self, parent, main_gui: "MainGUI", current_settings: Dict[str, str]):
+        self.main_gui = main_gui
+        self.current_settings = current_settings
+        super().__init__(parent, "Database Connection")
+
+    def _setup_window(self) -> None:
+        fields = ["Host", "Port", "Database", "User"]
+        defaults = {
+            "Host": str(self.current_settings.get("db_host", "")),
+            "Port": str(self.current_settings.get("db_port", "")),
+            "Database": str(self.current_settings.get("db_database", "")),
+            "User": str(self.current_settings.get("db_user", "")),
+        }
+        self._create_form_fields(fields, defaults)
+
+        # Password gets its own masked entry - _create_form_fields doesn't support
+        # show="*", and we don't want it echoed to the screen by default.
+        row = len(fields)
+        ttk.Label(self.window, text="Password").grid(row=row, column=0, sticky="e", padx=5, pady=2)
+        password_entry = ttk.Entry(self.window, show="*")
+        password_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=2)
+        password_entry.insert(0, str(self.current_settings.get("db_password", "")))
+        self.entries["Password"] = password_entry
+
+        show_password_var = tk.BooleanVar(value=False)
+
+        def _toggle_password_visibility():
+            password_entry.config(show="" if show_password_var.get() else "*")
+
+        ttk.Checkbutton(
+            self.window, text="Show password", variable=show_password_var,
+            command=_toggle_password_visibility
+        ).grid(row=row + 1, column=1, sticky="w", padx=5, pady=(0, 5))
+
+        self._create_submit_button("Save && Reconnect", row + 2)
+
+    def _on_submit(self) -> None:
+        host = self.entries["Host"].get().strip()
+        port_text = self.entries["Port"].get().strip()
+        database = self.entries["Database"].get().strip()
+        user = self.entries["User"].get().strip()
+        password = self.entries["Password"].get()
+
+        if not host or not database or not user:
+            messagebox.showerror("Error", "Host, Database, and User are required.")
+            return
+
+        try:
+            port = int(port_text)
+        except ValueError:
+            messagebox.showerror("Error", "Port must be a number.")
+            return
+
+        new_settings = {
+            "db_host": host,
+            "db_port": port,
+            "db_database": database,
+            "db_user": user,
+            "db_password": password,
+        }
+
+        # Give some feedback while we attempt the (potentially slow) connection.
+        self.window.config(cursor="watch")
+        self.window.update_idletasks()
+        try:
+            self.main_gui.apply_new_connection(new_settings)
+        except Exception as e:
+            messagebox.showerror(
+                "Connection Failed",
+                f"Could not connect with the given settings:\n{str(e)}\n\n"
+                "Your previous connection is still active and nothing was saved."
+            )
+            return
+        finally:
+            self.window.config(cursor="")
+
+        messagebox.showinfo("Success", f"Connected to '{database}' and saved settings.")
+        self.destroy()
+
+
 class MainGUI:
     """Main application window."""
 
@@ -480,8 +656,22 @@ class MainGUI:
         'Mechanical', 'Inductor', 'Opto', 'OpAmp', 'Transister', 'Power Supply IC', 'Semiconductor'
     ]
 
-    def __init__(self, db_connection):
+    def __init__(self, db_connection, connection_settings: Optional[Dict[str, object]] = None,
+                 on_update_connection: Optional[Callable[[Dict[str, object]], object]] = None):
         self.db_manager = DatabaseManager(db_connection)
+        # Current DB connection settings (host/port/database/user/password), used to
+        # pre-fill the DatabaseConnectionWindow. Owned by the caller (main.py), which
+        # is responsible for actually persisting them (e.g. to the .ini file).
+        self.connection_settings: Dict[str, object] = connection_settings or {}
+        # Callback: takes a new settings dict, attempts to connect, persists the
+        # settings on success, and returns the new live connection. Should raise
+        # on failure rather than returning anything, so MainGUI knows not to swap in
+        # a broken connection.
+        self.on_update_connection = on_update_connection
+        self.current_component_type_filter: Optional[str] = None
+        self.sort_column: Optional[str] = None
+        self.sort_descending: bool = False
+        self._search_after_id: Optional[str] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -509,6 +699,10 @@ class MainGUI:
         file_menu.add_command(label="Exit", command=self.root.quit)
         menu_bar.add_cascade(label="File", menu=file_menu)
 
+        settings_menu = tk.Menu(menu_bar, tearoff=False)
+        settings_menu.add_command(label="Database Connection...", command=self._open_db_connection_window)
+        menu_bar.add_cascade(label="Settings", menu=settings_menu)
+
     def _create_status_bar(self) -> None:
         """Create the status bar."""
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
@@ -519,6 +713,9 @@ class MainGUI:
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+        # Create search bar
+        self._create_search_bar(main_frame)
+
         # Create parts treeview
         self._setup_parts_treeview(main_frame)
 
@@ -527,6 +724,39 @@ class MainGUI:
 
         # Initialize data
         self._refresh_parts_list()
+
+    def _create_search_bar(self, parent) -> None:
+        """Create the search bar above the parts treeview."""
+        search_frame = ttk.Frame(parent)
+        search_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=(0, 5))
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self._on_search_changed)
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        ttk.Button(search_frame, text="Clear", command=lambda: self.search_var.set("")).pack(side=tk.LEFT, padx=(5, 0))
+
+    def _on_search_changed(self, *_args) -> None:
+        """Debounce search input so we don't hit the DB on every keystroke."""
+        if self._search_after_id is not None:
+            self.root.after_cancel(self._search_after_id)
+        self._search_after_id = self.root.after(300, self._refresh_parts_list)
+
+    # Maps treeview column identifiers to the DB column names understood by
+    # DatabaseManager.SORTABLE_COLUMNS. "#0" is the tree's special first column.
+    COLUMN_DB_MAP = {
+        "#0": "kicad_part_number",
+        "description": "description",
+        "component_type": "component_type",
+        "value": "value",
+        "symbol_ref": "symbol_ref",
+        "footprint_ref": "footprint_ref",
+        "manufacturer": "manufacturer",
+        "manufacturer_part_number": "manufacturer_part_number",
+    }
 
     def _setup_parts_treeview(self, parent) -> None:
         """Setup the parts treeview widget."""
@@ -541,24 +771,65 @@ class MainGUI:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Double-click a row to edit it directly, without needing to select + click "Edit Part"
+        self.tree.bind("<Double-1>", self._on_row_double_click)
+
         # Define columns
         columns = ("description", "component_type", "value", "symbol_ref", "footprint_ref", "manufacturer", "manufacturer_part_number")
         self.tree["columns"] = columns
 
-        # Configure column headings
-        self.tree.heading("#0", text="KiCad Part Number")
-        self.tree.heading("description", text="Description")
-        self.tree.heading("component_type", text="Component Type")
-        self.tree.heading("value", text="Value")
-        self.tree.heading("symbol_ref", text="Symbol Reference")
-        self.tree.heading("footprint_ref", text="Footprint Reference")
-        self.tree.heading("manufacturer", text="Manufacturer")
-        self.tree.heading("manufacturer_part_number", text="Manufacturer Part Number")
+        # Configure column headings, with click-to-sort wired to each one
+        headings = {
+            "#0": "KiCad Part Number",
+            "description": "Description",
+            "component_type": "Component Type",
+            "value": "Value",
+            "symbol_ref": "Symbol Reference",
+            "footprint_ref": "Footprint Reference",
+            "manufacturer": "Manufacturer",
+            "manufacturer_part_number": "Manufacturer Part Number",
+        }
+        for col_id, label in headings.items():
+            self.tree.heading(col_id, text=label, command=lambda c=col_id: self._on_column_header_click(c))
 
         # Configure column widths
         self.tree.column("#0", width=150)
         for col in columns:
             self.tree.column(col, width=120)
+
+    def _on_column_header_click(self, col_id: str) -> None:
+        """Handle a click on a treeview column header: sort by that column,
+        toggling direction if it's already the active sort column."""
+        db_column = self.COLUMN_DB_MAP.get(col_id)
+        if not db_column:
+            return
+
+        if self.sort_column == db_column:
+            self.sort_descending = not self.sort_descending
+        else:
+            self.sort_column = db_column
+            self.sort_descending = False
+
+        self._update_column_heading_indicators()
+        self._refresh_parts_list()
+
+    def _update_column_heading_indicators(self) -> None:
+        """Add a \u25b2/\u25bc arrow to the active sort column's heading, clear others."""
+        base_labels = {
+            "#0": "KiCad Part Number",
+            "description": "Description",
+            "component_type": "Component Type",
+            "value": "Value",
+            "symbol_ref": "Symbol Reference",
+            "footprint_ref": "Footprint Reference",
+            "manufacturer": "Manufacturer",
+            "manufacturer_part_number": "Manufacturer Part Number",
+        }
+        arrow = " \u25bc" if self.sort_descending else " \u25b2"
+        for col_id, label in base_labels.items():
+            db_column = self.COLUMN_DB_MAP.get(col_id)
+            text = label + arrow if db_column == self.sort_column else label
+            self.tree.heading(col_id, text=text)
 
     def _create_button_frame(self, parent) -> None:
         """Create the button frame with action buttons."""
@@ -598,27 +869,60 @@ class MainGUI:
 
     def _filter_by_component_type(self, component_type: Optional[str]) -> None:
         """Filter parts by component type."""
-        self._refresh_parts_list(component_type)
+        self.current_component_type_filter = component_type
+        self._refresh_parts_list()
         filter_text = component_type or "All"
         self.status_bar.config(text=f"Filtered by: {filter_text}")
 
     def _refresh_parts_list(self, component_type_filter: Optional[str] = None) -> None:
-        """Refresh the parts list in the treeview."""
+        """Refresh the parts list in the treeview, applying the current search
+        term and sort column/direction. component_type_filter, if given,
+        updates the persisted filter (used by callers like AddPartWindow's
+        refresh_callback that don't know about the current filter state)."""
+        if component_type_filter is not None:
+            self.current_component_type_filter = component_type_filter
+
         # Clear existing items
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         # Fetch and display parts
         try:
-            parts = self.db_manager.get_parts(component_type_filter)
+            search_term = self.search_var.get().strip() if hasattr(self, "search_var") else ""
+            parts = self.db_manager.get_parts(
+                self.current_component_type_filter,
+                search_term=search_term or None,
+                sort_column=self.sort_column,
+                sort_descending=self.sort_descending,
+            )
             for part in parts:
                 self.tree.insert("", "end", text=part[0], values=part[1:])
+            self.status_bar.config(text=f"{len(parts)} part(s)")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load parts: {str(e)}")
 
     def _open_add_part_window(self) -> None:
         """Open the add part window."""
         AddPartWindow(self.root, self.db_manager, self.COMPONENT_TYPES, self._refresh_parts_list)
+
+    def _on_row_double_click(self, event) -> None:
+        """Open the edit window for whichever row was double-clicked.
+
+        Ignores double-clicks on the header row (event.y in the header area
+        returns region "heading", not "cell"/"tree") so this doesn't fight
+        with the column-sort click handler.
+        """
+        region = self.tree.identify_region(event.x, event.y)
+        if region == "heading":
+            return
+
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return  # double-click landed on empty space below the last row
+
+        self.tree.selection_set(row_id)
+        kicad_part_number = self.tree.item(row_id, "text")
+        EditPartWindow(self.root, self.db_manager, self.COMPONENT_TYPES, kicad_part_number, self._refresh_parts_list)
 
     def _open_edit_part_window(self) -> None:
         """Open the edit part window."""
@@ -637,6 +941,37 @@ class MainGUI:
     def _open_add_supplier_window(self) -> None:
         """Open the add supplier window."""
         AddSupplierWindow(self.root, self.db_manager)
+
+    def _open_db_connection_window(self) -> None:
+        """Open the database connection settings window."""
+        DatabaseConnectionWindow(self.root, self, self.connection_settings)
+
+    def apply_new_connection(self, new_settings: Dict[str, object]) -> None:
+        """Attempt to switch to a new database connection.
+
+        Delegates the actual connect-and-persist work to on_update_connection
+        (owned by main.py, since it also manages the app-level global
+        connection and the .ini file). Only swaps self.db_manager over and
+        refreshes the UI once that succeeds; if it raises, this re-raises to
+        the caller (DatabaseConnectionWindow) and the current connection and
+        settings are left untouched.
+        """
+        if self.on_update_connection is None:
+            raise RuntimeError("No connection update handler is configured.")
+
+        new_connection = self.on_update_connection(new_settings)
+
+        self.db_manager = DatabaseManager(new_connection)
+        self.connection_settings = new_settings
+        self.current_component_type_filter = None
+        self.sort_column = None
+        self.sort_descending = False
+        if hasattr(self, "search_var"):
+            self.search_var.set("")
+        self._refresh_parts_list()
+        self.status_bar.config(
+            text=f"Connected to {new_settings.get('db_database')}@{new_settings.get('db_host')}"
+        )
 
     def _center_window(self) -> None:
         """Center the window on the screen."""
